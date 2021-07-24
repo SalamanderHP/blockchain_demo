@@ -1,4 +1,6 @@
 const SHA256 = require('crypto-js/sha256');
+const EC = require('elliptic').ec;
+const ec = new EC('secp256k1');
 
 class Transaction {
   constructor(fromAddress, toAddress, amount) {
@@ -20,6 +22,17 @@ class Transaction {
     const sig = signingKey.sign(hashTx, 'base64');
     this.signature = sig.toDER('hex');
   }
+
+  isValid() {
+    if(this.fromAddress === null) return true;
+
+    if(!this.signature || this.signature.length === 0) {
+      throw new Error('No signature in this transaction');
+    }
+
+    const publicKey = ec.keyFromPublic(this.fromAddress, 'hex');
+    return publicKey.verify(this.calculateHash(), this.signature);
+  }
 }
 
 class Block {
@@ -40,6 +53,16 @@ class Block {
       this.nonce++;
       this.hash = this.calculateHash();
     }
+  }
+
+  hasValidTransactions() {
+    for(const tx of this.transactions) {
+      if(!tx.isValid()) {
+        return false;
+      }
+    }
+
+    return true;
   }
 }
 
@@ -74,6 +97,14 @@ class Blockchain {
   }
 
   createTransaction(transaction) {
+    if(!transaction.fromAddress || !transaction.toAddress) {
+      throw new Error('Transaction must have from address or to address');
+    }
+
+    if(!transaction.isValid) {
+      throw new Error('Transaction is not valid to add');
+    }
+
     this.pendingTransactions.push(transaction)
   }
 
@@ -98,6 +129,10 @@ class Blockchain {
     for(let i = 1; i < this.chain.length; i++) {
       const currentBlock = this.chain[i];
       const previousBlock = this.chain[i - 1];
+
+      if(!currentBlock.hasValidTransactions()) {
+        return false;
+      }
 
       if(currentBlock.hash !== currentBlock.calculateHash()) {
         return false;
